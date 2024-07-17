@@ -8,6 +8,8 @@ This app requires Node.JS which can be downloaded here: https://nodejs.org
 
 Download the lastest version of the app. Run the `start.bat` script or type `npm start` into your console while in the directory.
 
+To access a WaniKani API token, go to https://www.wanikani.com and then to Setting > API tokens. Click `Generate New Token` at the bottom. Add a description for the token (you can just call it WanikaniStrokeOrder or something like that). You don't need to select any of the permissions, this app should not make changes yo your WaniKani account. Then hit `Generate token` and it should give it to you. This is what you will use to access this app's features.
+
 # Curent State
 
 The app is, at the moment, in a very bare bones state. You can currently only link your WaniKani API key and see animated stroke order diagrams for the different kanji.
