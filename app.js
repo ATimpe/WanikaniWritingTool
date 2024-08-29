@@ -41,7 +41,9 @@ app.get('/', async (req, res) => {
     success = await initSubjects(USER_TOKEN) && success;
 
     if (success) {
-        data = await loadSubjectCache(USER_TOKEN);
+        data = await loadSubjectCache();
+
+        data = sortSubjectDataByLevel(data);
 
         res.render('index', { data: data });
     } else {
@@ -56,7 +58,7 @@ app.post('/', urlencodedParser, async (req, res) => {
 
     if (success) {
         saveToken(req.body.token);
-        data = await loadSubjectCache(USER_TOKEN);
+        data = await loadSubjectCache();
         res.render('index', { data: data });
     } else {
         res.render('token', { error: ERROR });
@@ -66,6 +68,24 @@ app.post('/', urlencodedParser, async (req, res) => {
 app.get('/kanji/:kanjichar', async (req, res) => {
     let kanji = req.params.kanjichar;
     res.render('kanji', { kanjichar: kanji });
+});
+
+app.get('/quiz', async (req, res) => {
+    let quizSubjects = await getSubjectsById([440, 441, 442]);
+
+    quizSubjects = JSON.stringify(quizSubjects);
+
+    res.render('quiz', { quizSubjects: quizSubjects });
+});
+
+app.post('/quiz', urlencodedParser, async (req, res) => {
+    let quizSubjects = await getSubjectsByLevel(req.body.quizLevelNum);
+
+    console.log(quizSubjects);
+
+    quizSubjects = JSON.stringify(quizSubjects);
+
+    res.render('quiz', { quizSubjects: quizSubjects});
 });
 
 // Start the server
@@ -107,7 +127,6 @@ async function initSubjects(token) {
             } else { // If something is cached, check if up to date
                 if (await subjectsNeedUpdate(token)) {
                     let subjectsResponse = await syncSubjects(token);
-                    console.log(subjectsResponse);
 
                     subjectsSynced = !responseHasError(subjectsResponse);
                     if (responseHasError(subjectsResponse)) ERROR = subjectsResponse.error;
@@ -167,19 +186,6 @@ async function fetchWK(token, endpointPath, params = []) {
     return response;
 }
 
-async function syncSubjects(token) {
-    let maxLevelParam = getMaxLevelParam();
-    let response = await fetchWK(token, 'subjects', ['types=kanji', `levels=${maxLevelParam}`]);
-
-    // Looks at the data to see if there is an error in fetching the data
-    if (!responseHasError(response)) {
-        // Cache's the subject data
-        await cache.save([{ key: "SUBJECT_DATA", value: response.data }, {key: "SUBJECT_LAST_UPDATE", value:new Date().toUTCString() }, {key: "SUBJECT_MAX_LEVEL", value:userData.subscription.max_level_granted}]);
-    } 
-
-    return response;
-}
-
 // Checks to see if there has been subjects updated since the last time it was cached
 async function subjectsNeedUpdate(token) {
     let needUpdate = false;
@@ -207,15 +213,6 @@ async function subjectsNeedUpdate(token) {
     return needUpdate;
 }
 
-async function loadSubjectCache(token) {
-    // If the subject data is already cached
-    let result = await cache.get("SUBJECT_DATA")
-        .then(result => data = result)
-        .catch(err => data = null);
-
-    return result;
-}
-
 // To limit the number of levels that get returned based on the user's max level granted, a parameter with all the levels wanted in an array must be
 // passed into the API call as a parameter. This function returns that parameter.
 function getMaxLevelParam() {
@@ -239,6 +236,36 @@ async function initUserData(token) {
         ERROR = response.error;
         return false;
     }
+}
+
+
+
+
+
+
+// ====================================== CACHING ======================================
+
+
+async function loadSubjectCache() {
+    // If the subject data is already cached
+    let result = await cache.get("SUBJECT_DATA")
+        .then(result => data = result)
+        .catch(err => data = null);
+
+    return result;
+}
+
+async function syncSubjects(token) {
+    let maxLevelParam = getMaxLevelParam();
+    let response = await fetchWK(token, 'subjects', ['types=kanji', `levels=${maxLevelParam}`]);
+
+    // Looks at the data to see if there is an error in fetching the data
+    if (!responseHasError(response)) {
+        // Cache's the subject data
+        await cache.save([{ key: "SUBJECT_DATA", value: response.data }, {key: "SUBJECT_LAST_UPDATE", value:new Date().toUTCString() }, {key: "SUBJECT_MAX_LEVEL", value:userData.subscription.max_level_granted}]);
+    } 
+
+    return response;
 }
 
 
@@ -283,6 +310,54 @@ async function tokenTest(token) {
         .then(response => response.json());
     
     return response;
+}
+
+
+// ====================================== DATA HANDLING ======================================
+
+// Sorts returned subject data based on level into a 2D array (not please only use this with data that is just kanji subjects)
+function sortSubjectDataByLevel(data) {
+    let map = new Map();
+
+    // Goes through each subjects, finds the assigned level then adds it to that array
+    for (const kanji of data) {
+        if (!map.has(kanji.data.level)) {
+            map.set(kanji.data.level, []);
+        }
+
+        map.get(kanji.data.level).push(kanji);
+    }
+    
+    return map;
+}
+
+// Takes in an array of ids for subject data and then returns an array of the subject data with those ids
+async function getSubjectsById(ids) {
+    let subjects = await loadSubjectCache();
+    let subjectArray = [];
+
+    // TODO: make process more efficient
+    for (const subject of subjects) {
+        if (ids.includes(subject.id)) {
+            subjectArray.push(subject);
+        }
+    }
+
+    return { "data": subjectArray };
+}
+
+// Takes in a level number for subject data and then returns an array of the subjects in that level
+async function getSubjectsByLevel(level) {
+    let subjects = await loadSubjectCache();
+    let subjectArray = [];
+
+    for (const subject of subjects) {
+        if (subject.data.level == level) {
+            subjectArray.push(subject);
+        }
+    }
+
+    return { "data": subjectArray };
 }
 
 
