@@ -23,7 +23,6 @@ const cache = Cache({
 
 const WKUrl = 'https://api.wanikani.com/v2/';
 var USER_TOKEN;
-var tokenConfirm = false;                         // If the token prodived by the user works
 var subjectsSynced = false;                       // If the subjects in the cache are up to date
 
 var userData;
@@ -35,57 +34,138 @@ var ERROR = "";
 
 // ====================================== ROUTES ======================================
 
+/*
+    For routes, if the route has any sort of API calls made, please place all of the code
+    In a try/catch block. An arror handling function will throw an exception if any of the 
+    responses have an error. Every route with an API call should also load the token beforehand
+    in case the user has changed it.
+*/
+
 app.get('/', async (req, res) => {
-    // If either of these fail, the pull was not a success
-    let success = await initUserData(USER_TOKEN);
-    success = await initSubjects(USER_TOKEN) && success;
+    try {
+        let hasToken = loadToken();
 
-    if (success) {
-        data = await loadSubjectCache();
+        if (!hasToken) {
+            res.redirect('/token');
+        } else {
+            await initUserData(USER_TOKEN);
+            await initSubjects(USER_TOKEN);
 
-        data = sortSubjectDataByLevel(data);
+            data = await loadSubjectCache();
+            data = sortSubjectDataByLevel(data);
 
-        res.render('index', { data: data });
-    } else {
-        res.render('token', { error: ERROR });
+            res.render('index', { data: data });
+        }
+    }
+    catch (e) {
+        res.redirect(`/error?error=${encodeURIComponent(JSON.stringify(e))}`);
     }
 });
 
 // Updating the token
 app.post('/', urlencodedParser, async (req, res) => {
-    let success = await initUserData(req.body.token);
-    success = await initSubjects(req.body.token) && success;
+    saveToken(req.body.token);
+    res.redirect('/');
+});
 
-    if (success) {
-        saveToken(req.body.token);
-        data = await loadSubjectCache();
-        res.render('index', { data: data });
-    } else {
-        res.render('token', { error: ERROR });
+// Updating the token
+app.get('/token', urlencodedParser, async (req, res) => {
+    if (req.query.hasOwnProperty("error")) {
+        if (req.query.error) {
+            res.render('token', { error: "Current token is invalid, please enter a new one.", currentToken: USER_TOKEN });
+        }
+    }
+
+    else {
+        res.render('token', { currentToken: USER_TOKEN });
     }
 });
 
+// TODO: Imporve this code so it does pretty much the same thing as get('/')
 app.get('/kanji/:kanjichar', async (req, res) => {
-    let kanji = req.params.kanjichar;
-    res.render('kanji', { kanjichar: kanji });
+    try {
+        let kanji = req.params.kanjichar;
+
+        if (!subjectsSynced) {
+            await initUserData(USER_TOKEN);
+            await initSubjects(USER_TOKEN);
+        }
+
+        let kanjiData = await getSubjectByChar(kanji);
+
+        // If the subject data isn't cached it will sync the subjects
+        if (kanjiData == -1) {
+            await syncSubjects();
+
+            kanjiData = await getSubjectByChar(kanji);
+        }
+
+        // If the character data isn't found
+        if (kanjiData == 0) res.render('kanji', { error: true });
+
+        else res.render('kanji', { kanjiData: kanjiData.data });
+    }
+    catch (e) { 
+        res.redirect(`/error?error=${encodeURIComponent(JSON.stringify(e))}`);
+    }
 });
 
+// If not called from the main page, it redirects to '/'
 app.get('/quiz', async (req, res) => {
-    let quizSubjects = await getSubjectsById([440, 441, 442]);
+    res.redirect("/");
+});
+
+app.post('/quiz', urlencodedParser, async (req, res) => {
+    let quizSubjects = await getSubjectsByLevel(req.body.quizLevelNum);
 
     quizSubjects = JSON.stringify(quizSubjects);
 
     res.render('quiz', { quizSubjects: quizSubjects });
 });
 
-app.post('/quiz', urlencodedParser, async (req, res) => {
-    let quizSubjects = await getSubjectsByLevel(req.body.quizLevelNum);
+app.get('/error', urlencodedParser, async (req, res) => {
+    let error = JSON.parse(decodeURIComponent(req.query.error));
 
-    console.log(quizSubjects);
+    console.log(error);
 
-    quizSubjects = JSON.stringify(quizSubjects);
+    if (error.hasOwnProperty("code")) {
+        switch (error.code) {
+            // Token doesn't work
+            case 401:
+                res.redirect(`/token?error=${encodeURIComponent(true)}`);
+                break;
+            
+            case 403:
+                res.render('error', { errorMsg: "Access is Forbidden." });
+                break;
+            
+            // API endpoint not found
+            case 404:
+                res.render('error', { errorMsg: "API Endpoint not found, please report this bug to the GitHub." });
+                break;
+            
+            case 422:
+                res.render('error', { errorMsg: "Unprocessable Entity. " + error.message });
+                break;
+            
+            // Too many API requests
+            case 429:
+                res.render('error', { errorMsg: "API rate limit exceeded. Please try again in about 60 seconds. If you see this error pop up a lot, please report it to the GitHub." });
+                break;
+            
+            // Internal service error
+            case 500:
+                res.render('error', { errorMsg: "Internal Service error. Please try again." });
+                break;
+            
+            // Service is currently unavailable
+            case 503:
+                res.render('error', { errorMsg: "WaniKani is currently unavailable, please try again another time." });
+                break;
+        }
+    }
 
-    res.render('quiz', { quizSubjects: quizSubjects});
+    else console.log(error);
 });
 
 // Start the server
@@ -104,42 +184,28 @@ app.listen(PORT, () => {
 // Should run at the start of the app. If the token is invalid or some other error happens, it will keep running this code until a proper token is entered or the error is resolved
 async function initSubjects(token) {
     // When both are already done, it will simply skip all the bellow code.
-    if (tokenConfirm && subjectsSynced) return true;
-
-    if (!tokenConfirm) {
-        let tokenResponse = await tokenTest(token);
-
-        // TODO make the verification account for other errors not related to token
-        tokenConfirm = !responseHasError(tokenResponse);
-        if (responseHasError(tokenResponse)) ERROR = tokenResponse.error;
-    }
+    if (subjectsSynced) return true;
 
     // If the token provided doesn't throw an error
-    if (tokenConfirm) {
-        if (!subjectsSynced) {
-            let data = await loadSubjectCache();
+    if (!subjectsSynced) {
+        if (await subjectsNeedUpdate(token)) {
+            let subjectsResponse = await syncSubjects(token);
 
-            // If nothing is cached
-            if (typeof data == "undefined") {
-                let subjectsResponse = await syncSubjects(token);
-
-                subjectsSynced = !responseHasError(subjectsResponse);
-            } else { // If something is cached, check if up to date
-                if (await subjectsNeedUpdate(token)) {
-                    let subjectsResponse = await syncSubjects(token);
-
-                    subjectsSynced = !responseHasError(subjectsResponse);
-                    if (responseHasError(subjectsResponse)) ERROR = subjectsResponse.error;
-                    
-                } else {
-                    subjectsSynced = true;
-                }
-            } 
+            subjectsSynced = !responseHasError(subjectsResponse);
+        } else {
+            subjectsSynced = true;
         }
     }
 
     // Function should return bool based on if it was successful. If the token doesn't work or the subjects fail to sync, it will return false;
-    return tokenConfirm && subjectsSynced;
+    return subjectsSynced;
+}
+
+// Returns true or false based on if fetching data was a success
+async function initUserData(token) {
+    let response = await fetchWK(token, 'user');
+
+    userData = response.data;
 }
 
 async function fetchWK(token, endpointPath, params = []) {
@@ -163,8 +229,8 @@ async function fetchWK(token, endpointPath, params = []) {
         .then(response => response.json());
 
     // If the first response has a pages property, that means that there's more information and another call should be made.
-    // Limits function to 5 api calls
-    for (let i = 0; response.hasOwnProperty('pages') && i < 4; i++) {
+    // Limits function to 10 api calls
+    for (let i = 0; response.hasOwnProperty('pages') && i < 9; i++) {
         // next_url contains the url for the next page of data. If it is null, there are no more pages and the loop breaks
         if (response.pages.next_url != null) {
             URL = response.pages.next_url;
@@ -182,12 +248,18 @@ async function fetchWK(token, endpointPath, params = []) {
 
         i++;
     }
+
+    // Handles any errors by throwing the response
+    if (responseHasError(response)) throw response;
     
     return response;
 }
 
 // Checks to see if there has been subjects updated since the last time it was cached
 async function subjectsNeedUpdate(token) {
+    //let data = await loadSubjectCache();
+    //if (typeof data == "undefined") return true;
+
     let needUpdate = false;
     let lastDate = await cache.get("SUBJECT_LAST_UPDATE", 'Sat, 01 Jan 2000 00:00:00 GMT');
 
@@ -225,17 +297,17 @@ function getMaxLevelParam() {
     return encodeURIComponent(array.join(','));
 }
 
-// Returns true or false based on if fetching data was a success
-async function initUserData(token) {
-    let response = await fetchWK(token, 'user');
+// Returning 0 means the character isn't found, returning -1 means no data is cached
+async function getSubjectByChar(kanji) {
+    let subjects = await loadSubjectCache();
 
-    if (!responseHasError(response)) {
-        userData = response.data;
-        return true;
-    } else {
-        ERROR = response.error;
-        return false;
+    if (subjects == null) return -1; // No data cached
+
+    for (const subject of subjects) {
+        if (subject.data.characters == kanji) return subject;
     }
+
+    return 0; // Couldn't find character
 }
 
 
@@ -277,7 +349,6 @@ function initToken() {
     if (!fs.existsSync('token.txt')) {
         fs.writeFile('token.txt', '', err => {
             if (err) throw err;
-            console.log("It's saved!");
         });
         USER_TOKEN = "";
     } else {
@@ -285,11 +356,13 @@ function initToken() {
     }
 }
 
+// Returns if the token file is empty.
 function loadToken() {
     fs.readFile('token.txt', { encoding: 'utf8' }, (err, data) => {
         if (err) throw err;
         USER_TOKEN = data;
     }); 
+    return !USER_TOKEN == "";
 }
 
 function saveToken(token) {

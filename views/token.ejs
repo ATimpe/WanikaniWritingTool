@@ -3,17 +3,20 @@
 <head>
     <%- include('partials/head'); %>
     <title>Token Verification</title>
+    <link rel="stylesheet" href="/css/token.css">
 </head>
 <body>
-    <% if (error != null) { %>
-        <div class="alert alert-danger" role="alert">
-            <%= error %>
-        </div>
-    <% } %>
     <form method="POST" action="/">
-        Please enter your API Token.
-        <input type="text" name="token">
-        <button>Change Token</button>
+        <div id="tokenEntry">
+            <% if (typeof error != "undefined") { %>
+                <div class="alert alert-danger" role="alert">
+                    <%= error %>
+                </div>
+            <% } %>
+            <div>Please enter your API Token.</div>
+            <input type="text" name="token" value="<%= currentToken %>"><br>
+            <input type="submit" value="Change Token">
+        </div>
     </form>
 </body>
 </html>

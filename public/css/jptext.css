@@ -1,0 +1,8 @@
+@font-face {
+    font-family: 'YOzFont'; /*a name to be used later*/
+    src: url('/fonts/YOzFont.TTF'); /*URL to font*/
+}
+
+.jptext {
+    font-family: "YOzFont";
+}

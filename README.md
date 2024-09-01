@@ -12,11 +12,10 @@ To access a WaniKani API token, go to https://www.wanikani.com and then to Setti
 
 # Curent State
 
-The app is, at the moment, in a very bare bones state. You can currently only link your WaniKani API key and see animated stroke order diagrams for the different kanji.
+The app is, at the moment, in a very bare bones state. You can activate a quiz for each level on the main screen and look at individual pages on each kanji
 
 # Planned Features
 - Static stroke order diagrams
-- Quizes based on WaniKani level or custom made queues
 - Clean and readable webpage design
 - SRS based learning system
 - Alternate kanji writings

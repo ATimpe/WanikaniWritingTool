@@ -2,26 +2,80 @@
 <html>
 <head>
     <%- include('partials/head'); %>
-    <title><%= kanjichar %></title>
+    <title>
+        <% if (typeof kanjiData != "undefined") { %>
+            <%= kanjiData.characters %>
+        <% } else { %>
+            Kanji Not Found
+        <% } %>
+    </title>
     <link rel="stylesheet" href="/css/quiz.css">
 </head>
 <body>
-    <div id="answer">
-        <div id="character" class="jptext">
-            <%= kanjichar %>
+    <% if (typeof error != "undefined") { %>
+        <% if (error) { %>
+            <div>Kanji Not Found.</div>
+        <% } %>
+    <% } %>
+    <% if (typeof kanjiData != "undefined") { %>
+        <div id="answer">
+            <div id="character" class="jptext">
+                <%= kanjiData.characters %>
+            </div>
+            <div id="diagram">
+                <svg id="<%= kanjiData.characters %>" class="kanjiVG" width="109" height="109">
+                    <!-- SVGs will get loaded by script.js here  -->
+                </svg>
+            </div>
         </div>
-        <div id="diagram">
-            <svg id="<%= kanjichar %>" class="kanjiVG" width="109" height="109">
-                <!-- SVGs will get loaded by script.js here  -->
-            </svg>
+
+        <div id="meaning">
+            <% for (const meaning of kanjiData.meanings) { %>
+                <% if (meaning.primary) { %>
+                    <%= meaning.meaning %>
+                <% } %>
+            <% } %>
         </div>
-    </div>
 
-    <div id="meaning">
+        <div id="meaningAlt">
+            <% var meaningAltArray = [] %>
+            <% for (const meaning of kanjiData.meanings) { %>
+                <% if (!meaning.primary) { %>
+                    <% meaningAltArray.push(meaning.meaning) %>
+                <% } %>
+            <% } %>
+            <% if (meaningAltArray.length > 0) { %>
+                <%= meaningAltArray.join(', ') %>
+            <% } %>
+        </div>
 
-    </div>
-
-    <div id="readings">On'yomi: <span id="onyomi"></span>&emsp;Kun'yomi: <span id="kunyomi"></span></div>
+        <div id="readings">On'yomi: 
+            <span id="onyomi" class="jptext">
+                <% var readingArray = [] %>
+                <% for (const reading of kanjiData.readings) { %>
+                    <% if (reading.type == "onyomi") { %>
+                        <% readingArray.push(reading.reading) %>
+                    <% } %>
+                <% } %>
+                <% if (readingArray.length > 0) { %>
+                    <%= readingArray.join('、') %>
+                <% } %>
+            </span>
+            &emsp;&emsp;
+            Kun'yomi: 
+            <span id="kunyomi" class="jptext">
+                <% var readingArray = [] %>
+                <% for (const reading of kanjiData.readings) { %>
+                    <% if (reading.type == "kunyomi") { %>
+                        <% readingArray.push(reading.reading) %>
+                    <% } %>
+                <% } %>
+                <% if (readingArray.length > 0) { %>
+                    <%= readingArray.join('、') %>
+                <% } %>
+            </span>
+        </div>
+    <% } %>
     <script src="/js/KanjivgAnimate.min.js"></script>
     <script src="/js/kanjianim.js"></script>
 </body>

@@ -25,7 +25,7 @@
 
     </div>
 
-    <div id="readings">On'yomi: <span id="onyomi"></span>&emsp;Kun'yomi: <span id="kunyomi"></span></div>
+    <div id="readings">On'yomi: <span id="onyomi" class="jptext"></span>&emsp;&emsp;Kun'yomi: <span id="kunyomi" class="jptext"></span></div>
 
     <div id="buttons">
         <button id="showAnswer">Show Answer</button>
@@ -118,7 +118,7 @@
                 if (reading.type == "onyomi") onyomiArray.push(reading.reading);
             }
 
-            return onyomiArray.join(", ");
+            return onyomiArray.join("、");
         }
 
         function getKunyomiString(readings) {
@@ -127,7 +127,7 @@
                 if (reading.type == "kunyomi") kunyomiArray.push(reading.reading);
             }
 
-            return kunyomiArray.join(", ");
+            return kunyomiArray.join("、");
         }
 
         function getPrimaryMeaning(meanings) {
