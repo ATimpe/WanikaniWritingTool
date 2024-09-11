@@ -12,12 +12,11 @@ To access a WaniKani API token, go to https://www.wanikani.com and then to Setti
 
 # Curent State
 
-The app is, at the moment, in a very bare bones state. You can activate a quiz for each level on the main screen and look at individual pages on each kanji
+The app is, at the moment, in a very bare bones state. There is currently a very bare bones SRS system where you can learn the writings of Kanji and then be tested on them over time, similar to Wani Kani's SRS system
 
 # Planned Features
 - Static stroke order diagrams
 - Clean and readable webpage design
-- SRS based learning system
 - Alternate kanji writings
 - Information on individual kanji writings
 
