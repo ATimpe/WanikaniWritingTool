@@ -7,10 +7,31 @@
 <body>
     <p>
         Hello! This is a web tool for WaniKani users that will help you learn how to write the kanji taught by WaniKani. 
-        Currently this app is in very early alpha so it has very little functionality. At the moment you can quiz yourself
-        by WaniKani level. Click on the buttons below to start a quiz for that level. You can also click on each of the kanji to 
-        see more information about them.
+        Currently this app is in very early alpha so it has very little functionality. At the moment you can put kanji in 
+        your learning queue which will appear in your reviews catagory over time similar to wanikani's SRS system.
+        You can also click on each of the kanji to see more information about them.
     </p>
+
+    <form method="GET" action="/learn">
+        <div id="learn">
+            <% if (learnCount > 0) { %>
+                You have <%= learnCount %> subjects to learn.<br>
+            <input type="submit" value="Learn">
+            <% } else { %>
+                No subjects to learn at the moment!
+            <% } %>
+        </div>
+    </form>
+    <form method="GET" action="/quiz">
+        <div id="review">
+        <% if (reviewCount > 0) { %>
+            You have <%= reviewCount %> subjects to review.<br>
+            <input type="submit" value="Review">
+        <% } else { %>
+            No subjects to review at the moment!
+        <% } %>
+        </div>
+    </form>
 
     <% if (data != null) { %>
         <table style="width:100%">
@@ -21,9 +42,13 @@
         <% for (let i = 1; i < data.size + 1; i++) { %>
             <tr>
                 <td>
+                    <!--
                     <form method="POST" action="/quiz">
                         <input type="submit" name="quizLevelNum" value="<%= i %>">
                     </form>
+                    -->
+
+                    <%= i %>
                 </td>
                 <td>
                     <% for (let j = 0; j < data.get(i).length; j++) { %>

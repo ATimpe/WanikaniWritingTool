@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <%- include('partials/head'); %>
+    <title>Learn</title>
+    <link rel="stylesheet" href="/css/quiz.css">
+</head>
+<body>
+        <div id="answer">
+            <div id="character" class="jptext">
+
+            </div>
+            <div id="diagram">
+                <svg id="kanjiAnim" class="kanjiVG" width="109" height="109">
+                    <!-- SVGs will get loaded by script.js here  -->
+                </svg>
+            </div>
+        </div>
+
+        <div id="meaning">
+
+        </div>
+
+        <div id="meaningAlt">
+
+        </div>
+
+        <div id="readings">On'yomi: <span id="onyomi" class="jptext"></span>&emsp;&emsp;Kun'yomi: <span id="kunyomi" class="jptext"></span></div>
+
+        <div id="instruction">Write down this kanji several times.</div>
+
+        <div id="buttons">
+            <input type="submit" id="nextButton" value="Next">
+            <form method="POST" action="/learn" id="learnForm"><input name="subjectKanji" id="subjectKanji" hidden><input name="quizIDs" id="quizIDs" hidden><input type="number" name="lastSubject" id="lastSubject" value="0" hidden></form>
+        </div>
+    
+    <% if (learnSubjects != null) { %>
+    <script src="/js/KanjivgAnimate.min.js"></script>
+    <script src="/js/kanjianim.js"></script>
+    <script>
+        // Perhaps combine the functions used by both the quiz and the learn pages into a module.
+        var learnSubjects = <%-learnSubjects%>;
+
+        var characterElement = document.getElementById("character");
+        var meaningElement = document.getElementById("meaning");
+        var meaningAltElement = document.getElementById("meaningAlt");
+        var answerElement = document.getElementById("answer");
+        var onyomiElement = document.getElementById("onyomi");
+        var kunyomiElement = document.getElementById("kunyomi");
+        var diagramElement = document.getElementById("diagram");
+        var nextBTN = document.getElementById("nextButton");
+        var diagramElement = document.getElementById("diagram");
+        var kanjiAnimElement = document.getElementById("kanjiAnim");
+        var subjectKanjiElement = document.getElementById('subjectKanji');
+        var learnFormElement = document.getElementById('learnForm');
+        var quizIDsElement = document.getElementById('quizIDs');
+        var lastSubjectElement = document.getElementById('lastSubject');
+        nextBTN.addEventListener("click", nextSubject);
+
+        init();
+
+        function init() {
+            subjectQueue = learnSubjects.data;
+            quizIDsElement.value = getSubjectIDs().toString();
+            setSubject(subjectQueue[0]);
+        }
+
+        // TODO: Figure out a way to send the learnFormElement which adds the subject to the SRSData AFTER its studied. 
+        // Right now I have it set to when it first loads because the last subject doesn't save when the quizFormElement is sent right after.
+        async function nextSubject() {
+            subjectQueue.shift();
+
+            // If there are more subjects left
+            if (subjectQueue.length > 0) {
+                learnFormElement.submit();
+                setSubject(subjectQueue[0]);
+            } else {
+                // Go to quiz
+                lastSubjectElement.value = 1;
+                learnFormElement.submit();
+            }
+        }
+
+        function setSubject(subject) {
+            characterElement.innerHTML = subject.data.characters;
+            meaningElement.innerHTML = getPrimaryMeaning(subject.data.meanings);
+            meaningAltElement.innerHTML = getSecondaryMeanings(subject.data.meanings);
+            onyomiElement.innerHTML = getOnyomiString(subject.data.readings);
+            kunyomiElement.innerHTML = getKunyomiString(subject.data.readings);
+            kanjiAnimElement.id = subject.data.characters;
+            subjectKanjiElement.value = subject.data.characters;
+            load();
+        }
+
+        function getOnyomiString(readings) {
+            let onyomiArray = [];
+            for (const reading of readings) {
+                if (reading.type == "onyomi") onyomiArray.push(reading.reading);
+            }
+
+            return onyomiArray.join("、");
+        }
+
+        function getKunyomiString(readings) {
+            let kunyomiArray = [];
+            for (const reading of readings) {
+                if (reading.type == "kunyomi") kunyomiArray.push(reading.reading);
+            }
+
+            return kunyomiArray.join("、");
+        }
+
+        function getPrimaryMeaning(meanings) {
+            for (const meaning of meanings) {
+                if (meaning.primary) return meaning.meaning;
+            }
+
+            return null;
+        }
+
+        function getSecondaryMeanings(meanings) {
+            let meaningArray = [];
+            for (const meaning of meanings) {
+                if (!meaning.primary) meaningArray.push(meaning.meaning);
+            }
+
+            return meaningArray.join(", ");
+        }
+
+        function getSubjectIDs() {
+            let IDs = [];
+
+            for (const subject of learnSubjects.data) {
+                IDs.push(subject.id);
+            }
+
+            return IDs;
+        }
+    </script>
+    <% } %>
+</body>
+</html>

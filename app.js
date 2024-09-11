@@ -6,6 +6,11 @@ const bodyParser = require('body-parser');
 const fetch = require('node-fetch');
 const fs = require('fs');
 const Cache = require('file-system-cache').default
+const moment = require('moment');
+const SRSDataModule = require('./public/js/SRSData.js');
+
+const SRSData = SRSDataModule.SRSData;
+const SRSEntry = SRSDataModule.SRSEntry;
 
 const app = express();
 app.set("view engine", "ejs");
@@ -41,9 +46,11 @@ var ERROR = "";
     in case the user has changed it.
 */
 
+// TODO: Work on the subjects synced things. Needs to be a check for if cache is deleted while the page is open.
 app.get('/', async (req, res) => {
     try {
         let hasToken = loadToken();
+        initSRS();
 
         if (!hasToken) {
             res.redirect('/token');
@@ -52,12 +59,23 @@ app.get('/', async (req, res) => {
             await initSubjects(USER_TOKEN);
 
             data = await loadSubjectCache();
+
+            
+            let learnSubjects = await getLearnSubjects(5, data);
+            if (learnSubjects.data.length <= 0) {
+                nextWKLevel();
+                learnSubjects = await getLearnSubjects(5, data);
+            }
+            let reviewCount = getReviewCount();
+            let learnCount = learnSubjects.data.length;
+
             data = sortSubjectDataByLevel(data);
 
-            res.render('index', { data: data });
+            res.render('index', { data: data, reviewCount: reviewCount, learnCount: learnCount });
         }
     }
     catch (e) {
+        console.log(e);
         res.redirect(`/error?error=${encodeURIComponent(JSON.stringify(e))}`);
     }
 });
@@ -112,21 +130,74 @@ app.get('/kanji/:kanjichar', async (req, res) => {
 
 // If not called from the main page, it redirects to '/'
 app.get('/quiz', async (req, res) => {
-    res.redirect("/");
+    let quizSubjects = await getReviewSubjects();
+
+    res.render('quiz', { quizSubjects: JSON.stringify(quizSubjects) });
 });
 
 app.post('/quiz', urlencodedParser, async (req, res) => {
-    let quizSubjects = await getSubjectsByLevel(req.body.quizLevelNum);
+    let quizSubjects = await getSubjectsByIds(JSON.parse('[' + req.body.quizIDs + ']'));
+    /*
+    if (typeof req.body.quizLevelNum != "undefined") {
+        let quizSubjects = await getSubjectsByLevel(req.body.quizLevelNum);
+    }
+    if (typeof req.body.quizIDs != "undefined") {
+        let quizSubjects = await getSubjectsByIds(req.body.quizIDs.split(","));
+    }
+    else {
+        let quizSubjects = await getSubjectsByIds([440]);
+    }*/
 
-    quizSubjects = JSON.stringify(quizSubjects);
+    res.render('quiz', { quizSubjects: JSON.stringify(quizSubjects) });
+});
 
-    res.render('quiz', { quizSubjects: quizSubjects });
+app.post('/quizupdate', urlencodedParser, async (req, res) => {
+    let data = getSRSData();
+
+    if (req.body.correct == 1) {
+        data.increaseEntrySRS(req.body.subjectKanji);
+    } else {
+        data.decreaseEntrySRS(req.body.subjectKanji);
+    }
+
+    saveSRSData(data);
+
+    if (req.body.lastSubject == 0) {
+        res.status(204).send();
+    } else {
+        res.redirect("/");
+    }
+
+    //res.render('quiz', { quizSubjects: JSON.stringify(quizSubjects) });
+});
+
+// Gets the subjects needed to learn
+app.get('/learn', async (req, res) => {
+    let learnSubjects = await getLearnSubjects(5);
+
+    learnSubjects = JSON.stringify(learnSubjects);
+
+    res.render('learn', { learnSubjects: learnSubjects });
+});
+
+// Posts the data from the learning section, placing the subject in SRS after its learned
+app.post('/learn', urlencodedParser, async (req, res) => {
+    let data = getSRSData();
+
+    data.addEntry(req.body.subjectKanji);
+
+    saveSRSData(data);
+
+    if (req.body.lastSubject == 0) {
+        res.status(204).send();
+    } else {
+        let quizSubjects = await getSubjectsByIds(JSON.parse('[' + req.body.quizIDs + ']'));
+        res.render('quiz', { quizSubjects: JSON.stringify(quizSubjects) });
+    }
 });
 
 app.get('/error', urlencodedParser, async (req, res) => {
     let error = JSON.parse(decodeURIComponent(req.query.error));
-
-    console.log(error);
 
     if (error.hasOwnProperty("code")) {
         switch (error.code) {
@@ -164,8 +235,6 @@ app.get('/error', urlencodedParser, async (req, res) => {
                 break;
         }
     }
-
-    else console.log(error);
 });
 
 // Start the server
@@ -174,6 +243,9 @@ app.listen(PORT, () => {
     initToken();
     console.log(`Server is running on http://localhost:${PORT}`);
 });
+
+
+
 
 
 
@@ -334,11 +406,13 @@ async function syncSubjects(token) {
     // Looks at the data to see if there is an error in fetching the data
     if (!responseHasError(response)) {
         // Cache's the subject data
-        await cache.save([{ key: "SUBJECT_DATA", value: response.data }, {key: "SUBJECT_LAST_UPDATE", value:new Date().toUTCString() }, {key: "SUBJECT_MAX_LEVEL", value:userData.subscription.max_level_granted}]);
+        await cache.save([{ key: "SUBJECT_DATA", value: response.data }, {key: "SUBJECT_LAST_UPDATE", value: new Date().toUTCString() }, {key: "SUBJECT_MAX_LEVEL", value: userData.subscription.max_level_granted}]);
     } 
 
     return response;
 }
+
+
 
 
 
@@ -386,6 +460,11 @@ async function tokenTest(token) {
 }
 
 
+
+
+
+
+
 // ====================================== DATA HANDLING ======================================
 
 // Sorts returned subject data based on level into a 2D array (not please only use this with data that is just kanji subjects)
@@ -405,8 +484,8 @@ function sortSubjectDataByLevel(data) {
 }
 
 // Takes in an array of ids for subject data and then returns an array of the subject data with those ids
-async function getSubjectsById(ids) {
-    let subjects = await loadSubjectCache();
+async function getSubjectsByIds(ids, subjects = null) {
+    if (subjects == null) subjects = await loadSubjectCache();
     let subjectArray = [];
 
     // TODO: make process more efficient
@@ -419,9 +498,24 @@ async function getSubjectsById(ids) {
     return { "data": subjectArray };
 }
 
+// Takes in an array of character for subject data and then returns an array of the subject data with those kanji characters
+async function getSubjectsByCharacters(characters, subjects = null) {
+    if (subjects == null) subjects = await loadSubjectCache();
+    let subjectArray = [];
+
+    // TODO: make process more efficient
+    for (const subject of subjects) {
+        if (characters.includes(subject.data.characters)) {
+            subjectArray.push(subject);
+        }
+    }
+
+    return subjectArray;
+}
+
 // Takes in a level number for subject data and then returns an array of the subjects in that level
-async function getSubjectsByLevel(level) {
-    let subjects = await loadSubjectCache();
+async function getSubjectsByLevel(level, subjects = null) {
+    if (subjects == null) subjects = await loadSubjectCache();
     let subjectArray = [];
 
     for (const subject of subjects) {
@@ -432,6 +526,145 @@ async function getSubjectsByLevel(level) {
 
     return { "data": subjectArray };
 }
+
+
+
+
+
+
+
+
+
+// ====================================== SRS ======================================
+
+function initSRS() {
+    if (!fs.existsSync('./data/SRSData.json')) {
+        fs.writeFileSync('./data/SRSData.json', JSON.stringify(new SRSData()), err => {
+            if (err) throw err;
+        });
+    }
+}
+
+function getSRSData() {
+    if (!fs.existsSync('./data/SRSData.json')) {
+        initSRS();
+    }
+
+    let data = JSON.parse(fs.readFileSync('./data/SRSData.json'));
+    let SRS = new SRSData();
+    Object.assign(SRS, data);
+    return SRS;
+}
+
+function saveSRSData(data) {
+    if (!fs.existsSync('./data/SRSData.json')) {
+        initSRS();
+    }
+
+    fs.writeFileSync('./data/SRSData.json', JSON.stringify(data), err => {
+        if (err) throw err;
+    });
+}
+
+// Gets a block of unlearned subjects based on the current WK level the person in studying
+async function getLearnSubjects(amount, subjects = null) {
+    let SRSData = getSRSData();
+    if (subjects == null) subjects = await loadSubjectCache();
+    let subjectArray = [];
+
+    for (const subject of subjects) {
+        // If the subject is on the right level and isn't already in the SRS file
+        if (subject.data.level == SRSData.WKLevel && !SRSData.hasEntry(subject.data.characters)) {
+            subjectArray.push(subject);
+        }
+
+        if (subjectArray.length >= amount) break;
+    }
+
+    return { "data": subjectArray };
+}
+
+async function getReviewSubjects() {
+    let SRSData = getSRSData();
+    let characters = [];
+
+    for (const entry of SRSData.entries) {
+        if (isReviewReady(entry)) {
+            characters.push(entry.kanji);
+        }
+    }
+
+    let subjectArray = await getSubjectsByCharacters(characters);
+
+    return { "data": subjectArray };
+}
+
+function getReviewCount() {
+    let SRSData = getSRSData();
+    let reviewCount = 0;
+    for (const entry of SRSData.entries) {
+        if (isReviewReady(entry)) {
+            reviewCount++;
+        }
+    }
+
+    return reviewCount;
+}
+
+function isReviewReady(entry) {
+    let currentTime = new moment();
+    let lastStudiedTime = new moment(Date.parse(entry.dateLastStudied));
+
+    switch(entry.SRSLevel) {
+        // If the level is -1 that means this entry has been removed from SRS
+        case -1:
+            return false;
+
+        // If the level is 0 that means its ready to be reviewed right away
+        case 0:
+            return true;
+        
+        case 1:
+            return moment.duration(currentTime.diff(lastStudiedTime)) > moment.duration(4, 'hours');
+        
+        case 2:
+            return moment.duration(currentTime.diff(lastStudiedTime)) > moment.duration(8, 'hours');
+        
+        case 3:
+            return moment.duration(currentTime.diff(lastStudiedTime)) > moment.duration(1, 'days');
+        
+        case 4:
+            return moment.duration(currentTime.diff(lastStudiedTime)) > moment.duration(2, 'days');
+        
+        case 5:
+            return moment.duration(currentTime.diff(lastStudiedTime)) > moment.duration(1, 'weeks');
+        
+        case 6:
+            return moment.duration(currentTime.diff(lastStudiedTime)) > moment.duration(2, 'weeks');
+        
+        case 7:
+            return moment.duration(currentTime.diff(lastStudiedTime)) > moment.duration(1, 'months');
+
+        case 8:
+            return moment.duration(currentTime.diff(lastStudiedTime)) > moment.duration(4, 'months');
+            
+        case 9:
+            return false;
+        
+        default:
+            return false;
+    }
+}
+
+function nextWKLevel() {
+    let SRSData = getSRSData();
+
+    SRSData.increaseWKLevel();
+
+    saveSRSData(SRSData);
+}
+
+
 
 
 

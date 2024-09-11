@@ -29,3 +29,9 @@
     text-align: center;
     padding: 50px;
 }
+
+#instruction {
+    margin: auto;
+    text-align: center;
+    font-size: 30px;
+}
